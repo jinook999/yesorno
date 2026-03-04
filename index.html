@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>동의하시겠습니까?</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #f0f4ff;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 48px 56px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+      text-align: center;
+      max-width: 420px;
+    }
+
+    .emoji { font-size: 56px; margin-bottom: 16px; }
+
+    h1 {
+      font-size: 22px;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    #yes-btn {
+      padding: 12px 32px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #yes-btn:hover { background: #4338ca; }
+
+    #no-btn {
+      padding: 12px 32px;
+      background: white;
+      color: #e53e3e;
+      border: 2px solid #e53e3e;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: none;
+      user-select: none;
+    }
+
+    #no-btn.escaped {
+      position: fixed;
+    }
+
+    #result {
+      margin-top: 24px;
+      font-size: 20px;
+      font-weight: bold;
+      color: #4f46e5;
+      min-height: 28px;
+    }
+
+    /* 팝업 오버레이 */
+    #popup-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    #popup-overlay.show {
+      display: flex;
+    }
+
+    #popup {
+      background: white;
+      border-radius: 20px;
+      padding: 40px 48px;
+      text-align: center;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.25);
+      max-width: 360px;
+      animation: popIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.5); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    /* 매트 캐릭터 SVG 영역 */
+    .mat-character {
+      width: 220px;
+      height: 180px;
+      object-fit: contain;
+      margin: 0 auto 16px;
+      animation: bounce 0.8s infinite alternate ease-in-out;
+      display: block;
+    }
+
+    @keyframes bounce {
+      from { transform: translateY(0); }
+      to   { transform: translateY(-10px); }
+    }
+
+    #popup h2 {
+      font-size: 20px;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    #popup p {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    #popup-close {
+      padding: 10px 28px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    #popup-close:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="emoji">🧗</div>
+    <h1>나랑 클라이밍 하러갈래?</h1>
+    <p>진짜 같이 안해도 돼...</p>
+    <div class="buttons">
+      <button id="yes-btn" onclick="onYes()">가자!</button>
+      <button id="no-btn">싫은데?</button>
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <!-- 팝업 -->
+  <div id="popup-overlay">
+    <div id="popup">
+      <img src="maxresdefault.jpg" alt="매트와 친구" class="mat-character"/>
+      <h2>아싸! 🎉</h2>
+      <p>같이 가줘서 고마워요</p>
+      <button id="popup-close" onclick="closePopup()">확인</button>
+    </div>
+  </div>
+
+  <script>
+    const noBtn = document.getElementById('no-btn');
+    let yesCount = 0;
+    let isEscaped = false;
+
+    function makeEscaped() {
+      if (isEscaped) return;
+      isEscaped = true;
+      const rect = noBtn.getBoundingClientRect();
+      noBtn.style.left = rect.left + 'px';
+      noBtn.style.top = rect.top + 'px';
+      noBtn.style.width = rect.width + 'px';
+      noBtn.classList.add('escaped');
+    }
+
+    // 마우스가 가까워지면 도망
+    document.addEventListener('mousemove', (e) => {
+      const rect = noBtn.getBoundingClientRect();
+      const btnCenterX = rect.left + rect.width / 2;
+      const btnCenterY = rect.top + rect.height / 2;
+
+      const dx = e.clientX - btnCenterX;
+      const dy = e.clientY - btnCenterY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 200) {
+        makeEscaped();
+        escape(dx, dy, dist);
+      }
+    });
+
+    // 터치 지원 (모바일)
+    document.addEventListener('touchmove', (e) => {
+      const touch = e.touches[0];
+      const rect = noBtn.getBoundingClientRect();
+      const btnCenterX = rect.left + rect.width / 2;
+      const btnCenterY = rect.top + rect.height / 2;
+
+      const dx = touch.clientX - btnCenterX;
+      const dy = touch.clientY - btnCenterY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 220) {
+        makeEscaped();
+        escape(dx, dy, dist);
+      }
+    }, { passive: true });
+
+    function escape(dx, dy, dist) {
+      const speed = 280;
+
+      // 랜덤 방향으로 도망
+      const randomAngle = Math.random() * 2 * Math.PI;
+      let newX = noBtn.offsetLeft + Math.cos(randomAngle) * speed;
+      let newY = noBtn.offsetTop + Math.sin(randomAngle) * speed;
+
+      // 화면 경계 안에 유지
+      const margin = 10;
+      newX = Math.max(margin, Math.min(window.innerWidth - noBtn.offsetWidth - margin, newX));
+      newY = Math.max(margin, Math.min(window.innerHeight - noBtn.offsetHeight - margin, newY));
+
+      noBtn.style.left = newX + 'px';
+      noBtn.style.top = newY + 'px';
+    }
+
+    function onYes() {
+      document.getElementById('popup-overlay').classList.add('show');
+    }
+
+    function closePopup() {
+      document.getElementById('popup-overlay').classList.remove('show');
+      launchFireworks();
+    }
+
+    // 오버레이 클릭시 닫기
+    document.getElementById('popup-overlay').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('popup-overlay')) closePopup();
+    });
+
+    // ── 폭죽 ──────────────────────────────────────────
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999;';
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let animId = null;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function randomColor() {
+      const colors = ['#ff4757','#ffa502','#2ed573','#1e90ff','#ff6b81','#eccc68','#a29bfe','#fd79a8'];
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function burst(x, y) {
+      const count = 80;
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+        const speed = 3 + Math.random() * 6;
+        particles.push({
+          x, y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          alpha: 1,
+          color: randomColor(),
+          radius: 3 + Math.random() * 3,
+          gravity: 0.12,
+        });
+      }
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += p.gravity;
+        p.alpha -= 0.018;
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+      particles = particles.filter(p => p.alpha > 0);
+      if (particles.length > 0) {
+        animId = requestAnimationFrame(animate);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        animId = null;
+      }
+    }
+    function launchFireworks() {
+      if (animId) cancelAnimationFrame(animId);
+      particles = [];
+      const w = canvas.width;
+      const h = canvas.height;
+      const spots = [
+        [w * 0.2, h * 0.3], [w * 0.5, h * 0.2], [w * 0.8, h * 0.3],
+        [w * 0.3, h * 0.6], [w * 0.7, h * 0.5],
+      ];
+      spots.forEach(([x, y], i) => {
+        setTimeout(() => burst(x, y), i * 150);
+      });
+      // 마지막 burst 이후까지 루프 보장
+      const totalDuration = spots.length * 150 + 3000;
+      const start = Date.now();
+      function loop() {
+        animate();
+        if (Date.now() - start < totalDuration || particles.length > 0) {
+          animId = requestAnimationFrame(loop);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          animId = null;
+        }
+      }
+      animId = requestAnimationFrame(loop);
+    }
+  </script>
+</body>
+</html>
